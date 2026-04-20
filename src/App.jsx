@@ -353,7 +353,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 text-center">
           <Library className="h-10 w-10 mx-auto mb-4 text-yellow-400" />
           <h2 className="font-black text-xl tracking-tighter uppercase mb-2">Pustaka Smansa Soppeng</h2>
-          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.4em]">&copy; 2024 Multimedia SMAN 1 Soppeng</p>
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.4em]">&copy; 2026 Multimedia SMAN 1 Soppeng</p>
+          <a className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.4em]" href='https://www.instagram.com/perdana_911?igsh=MWJ1MnhzZHE0MHQydw==' >&copy; By:Perdana</a>
         </div>
       </footer>
 

@@ -28,7 +28,7 @@ export default function App() {
   const [stats, setStats] = useState({ active: 0, reading: 0, totalVisits: 0 });
 
   // Form State
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginForm, setLoginForm] = useState({ username: 'perdana', password: '12345' });
   const [regForm, setRegForm] = useState({ username: '', password: '', name: '' });
   const [studentInput, setStudentInput] = useState({ name: '', nisn: '', grade: 'X', sub: '1' });
 

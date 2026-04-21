@@ -3,7 +3,7 @@ import {
   BookOpen, Users, Upload, Shield, Home, Search, Trash2, Library, 
   CheckCircle, XCircle, Menu, X, Check, PlusCircle, ChevronDown, 
   FileText, Book as BookIcon, GraduationCap, Image as ImageIcon,
-  Activity, Eye, Globe, UserPlus, LogOut, Key, Database, Layers
+  Activity, Eye, Globe, UserPlus, LogOut, Key, Database, Layers, Info
 } from 'lucide-react';
 
 const API_URL = 'http://localhost:5000/api';
@@ -15,8 +15,10 @@ export default function App() {
   
   // Data State
   const [books, setBooks] = useState([]);
-  const [students, setStudents] = useState([]);
   const [serverStatus, setServerStatus] = useState('checking'); // 'online', 'offline'
+  
+  // URL / Path State (Untuk akses admin via link)
+  const [path, setPath] = useState(window.location.pathname);
   
   // UI State
   const [currentView, setCurrentView] = useState('home');
@@ -29,7 +31,15 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [regForm, setRegForm] = useState({ username: '', password: '', name: '' });
   const [studentInput, setStudentInput] = useState({ name: '', nisn: '', grade: 'X', sub: '1' });
-  const [bookForm, setBookForm] = useState({ title: '', author: '', grade: 'X', file: '', cover: '' });
+
+  // Update path saat URL berubah secara manual
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
 
   // --- SERVER SYNC ---
   useEffect(() => {
@@ -40,12 +50,11 @@ export default function App() {
           const data = await res.json();
           setBooks(data);
           setServerStatus('online');
-          // Hit visit
           fetch(`${API_URL}/stats/visit`, { method: 'POST' });
         }
       } catch (e) {
         setServerStatus('offline');
-        setBooks([]); // KOSONGKAN BUKU JIKA SERVER MATI
+        setBooks([]);
       }
     };
 
@@ -53,7 +62,6 @@ export default function App() {
     const interval = setInterval(() => {
       if (serverStatus === 'online') {
         fetch(`${API_URL}/stats`).then(r => r.json()).then(setStats);
-        // Heartbeat untuk active user
         fetch(`${API_URL}/stats/heartbeat`, { method: 'POST' });
       } else {
         checkServer();
@@ -170,12 +178,15 @@ export default function App() {
     );
   }
 
+  // --- LOGIC: Akses Admin harus via URL /admin/dashboard ---
+  const isAdminPath = path === '/admin/dashboard';
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       {/* NAVBAR */}
       <nav className="bg-blue-900 text-white p-4 shadow-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentView('home')}>
             <div className="bg-yellow-400 p-2 rounded-xl text-blue-900"><Library size={20}/></div>
             <span className="font-black tracking-tighter uppercase italic">Smansa Library</span>
           </div>
@@ -184,13 +195,24 @@ export default function App() {
                 <p className="text-[10px] font-black uppercase tracking-widest text-yellow-400">{user.level}</p>
                 <p className="text-xs font-bold">{user.name}</p>
             </div>
-            {user.level === 'Admin' && <button onClick={() => setCurrentView('admin')} className="p-2 hover:bg-blue-800 rounded-lg"><Shield size={18}/></button>}
+            
+            {/* Tombol Shield hanya muncul jika User adalah Admin DAN link-nya /admin/dashboard */}
+            {user.level === 'Admin' && isAdminPath && (
+              <button 
+                onClick={() => setCurrentView(currentView === 'admin' ? 'home' : 'admin')} 
+                className={`p-2 rounded-lg transition-all ${currentView === 'admin' ? 'bg-yellow-400 text-blue-900' : 'hover:bg-blue-800'}`}
+              >
+                <Shield size={18}/>
+              </button>
+            )}
+            
             <button onClick={() => setUser(null)} className="p-2 bg-red-500/20 text-red-300 rounded-lg"><LogOut size={18}/></button>
           </div>
         </div>
       </nav>
 
       <main className="flex-grow p-4 md:p-8 max-w-7xl mx-auto w-full">
+        {/* Konten Home */}
         {currentView === 'home' && (
             <div className="space-y-8 animate-fadeIn">
                 <div className="bg-blue-900 p-8 rounded-[2rem] text-white overflow-hidden relative shadow-2xl">
@@ -201,8 +223,16 @@ export default function App() {
                     <div className="absolute top-0 right-0 p-10 opacity-10 rotate-12"><BookOpen size={120}/></div>
                 </div>
 
+                {/* Pesan Rahasia jika user admin tapi belum di link dashboard */}
+                {user.level === 'Admin' && !isAdminPath && (
+                  <div className="bg-yellow-50 border-2 border-yellow-200 p-4 rounded-2xl flex items-center gap-3 text-yellow-800">
+                    <Info size={20} />
+                    <p className="text-xs font-bold uppercase italic">Mode Admin terdeteksi. Gunakan tautan "/admin/dashboard" untuk mengakses panel kontrol.</p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    {books.map(book => (
+                    {books.length > 0 ? books.map(book => (
                         <div key={book.id} className="bg-white rounded-3xl shadow-sm hover:shadow-xl transition-all border border-gray-100 overflow-hidden flex flex-col">
                             <div className="h-56 bg-gray-200 relative">
                                 <img src={book.cover || 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&w=300&q=80'} className="w-full h-full object-cover" />
@@ -222,12 +252,18 @@ export default function App() {
                                 </button>
                             </div>
                         </div>
-                    ))}
+                    )) : (
+                      <div className="col-span-full py-20 text-center text-gray-400">
+                        <Library size={48} className="mx-auto mb-4 opacity-20" />
+                        <p className="font-bold uppercase tracking-widest text-sm">Belum ada buku tersedia.</p>
+                      </div>
+                    )}
                 </div>
             </div>
         )}
 
-        {currentView === 'admin' && (
+        {/* Konten Admin (Hanya jika level Admin DAN di path yang benar) */}
+        {currentView === 'admin' && user.level === 'Admin' && isAdminPath ? (
             <div className="space-y-6 animate-fadeIn">
                 <div className="flex bg-white p-2 rounded-2xl shadow-sm border overflow-x-auto">
                     {['koleksi', 'siswa', 'statistik'].map(tab => (
@@ -276,15 +312,21 @@ export default function App() {
 
                 {adminTab === 'koleksi' && (
                     <div className="bg-white p-8 rounded-3xl border shadow-sm">
-                        <h3 className="font-black text-sm uppercase mb-6 flex items-center gap-2"><Database size={16} className="text-blue-600"/> Tambah Koleksi</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Form buku sama seperti sebelumnya, menggunakan base64 */}
-                            <p className="text-gray-400 text-xs italic">Modul manajemen buku sedang sinkron dengan database lokal.</p>
+                        <h3 className="font-black text-sm uppercase mb-6 flex items-center gap-2"><Database size={16} className="text-blue-600"/> Manajemen Koleksi</h3>
+                        <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
+                          <p className="font-bold uppercase tracking-widest text-xs italic">Modul upload buku sedang sinkron...</p>
                         </div>
                     </div>
                 )}
             </div>
-        )}
+        ) : currentView === 'admin' && (!isAdminPath || user.level !== 'Admin') ? (
+            <div className="bg-white p-20 rounded-[3rem] text-center shadow-2xl">
+              <XCircle size={64} className="mx-auto text-red-500 mb-6" />
+              <h2 className="text-2xl font-black uppercase text-gray-800">Akses Ditolak</h2>
+              <p className="text-gray-500 mt-2 font-medium">Halaman ini hanya dapat diakses melalui link dashboard resmi admin.</p>
+              <button onClick={() => setCurrentView('home')} className="mt-8 bg-blue-900 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs">Kembali ke Beranda</button>
+            </div>
+        ) : null}
       </main>
 
       {/* PDF READER MODAL */}
@@ -310,23 +352,21 @@ export default function App() {
                     </button>
                 </div>
                 <div className="flex-grow bg-gray-200">
-                    {readingBook.fileBase64 ? (
-                        <iframe src={readingBook.fileBase64} className="w-full h-full border-none" />
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                            <FileText size={80} className="mb-4 opacity-10" />
-                            <p className="font-black uppercase tracking-widest">File sedang disiapkan di server...</p>
-                        </div>
-                    )}
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                        <FileText size={80} className="mb-4 opacity-10" />
+                        <p className="font-black uppercase tracking-widest">Konten buku dimuat dari server...</p>
+                    </div>
                 </div>
             </div>
         </div>
       )}
 
-      {/* TOAST */}
+      {/* TOAST NOTIFIKASI */}
       {notification && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] bg-blue-900 text-white px-8 py-4 rounded-2xl shadow-2xl border border-blue-700 animate-slideUp flex items-center gap-3">
-          <div className="bg-white/20 p-2 rounded-lg"><Info size={16}/></div>
+        <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] px-8 py-4 rounded-2xl shadow-2xl border animate-slideUp flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-600 text-white border-red-500' : 'bg-blue-900 text-white border-blue-700'}`}>
+          <div className="bg-white/20 p-2 rounded-lg">
+            {notification.type === 'error' ? <X size={16}/> : <CheckCircle size={16}/>}
+          </div>
           <p className="font-bold text-xs uppercase tracking-widest">{notification.msg}</p>
         </div>
       )}
@@ -340,5 +380,3 @@ export default function App() {
     </div>
   );
 }
-
-function Info({size}) { return <CheckCircle size={size}/>; }

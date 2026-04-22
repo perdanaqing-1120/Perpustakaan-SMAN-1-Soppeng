@@ -275,7 +275,7 @@ export default function App() {
               {books.map(book => (
                 <div key={book.id} className="bg-white rounded-[2rem] shadow-md hover:shadow-2xl transition-all overflow-hidden flex flex-col">
                   <div className="h-40 md:h-64 bg-slate-100 relative overflow-hidden">
-                    <img src={book.cover || 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?q=80&w=300'} className="w-full h-full object-cover" />
+                    <img src={book.cover || 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?q=80&w=300'} className="w-full h-full object-cover" alt={book.title} />
                     <div className="absolute top-2 left-2 bg-blue-900 text-yellow-400 text-[8px] font-black px-2 py-1 rounded-lg uppercase">Kelas {book.grade}</div>
                   </div>
                   <div className="p-4 md:p-6 flex-grow flex flex-col justify-between">
@@ -308,7 +308,7 @@ export default function App() {
                 <div className="bg-white p-8 rounded-[3rem] shadow-xl text-center border-t-8 border-yellow-400 relative">
                     <div className="w-32 h-32 mx-auto rounded-full bg-blue-100 border-4 border-white shadow-xl overflow-hidden relative mb-4 flex items-center justify-center">
                         {profileForm.avatarBase64 ? (
-                            <img src={profileForm.avatarBase64} className="w-full h-full object-cover"/>
+                            <img src={profileForm.avatarBase64} className="w-full h-full object-cover" alt="Avatar"/>
                         ) : <User size={64} className="text-blue-300"/>}
                         <label className="absolute bottom-0 w-full bg-black/50 text-white p-2 cursor-pointer hover:bg-black/70 flex justify-center">
                             <Camera size={14}/>
@@ -326,7 +326,7 @@ export default function App() {
                     <form onSubmit={async (e) => {
                         e.preventDefault();
                         try {
-                            const res = await fetch(`${API_URL}/users/${user.id}/profile`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: profileForm.name, avatar: profileForm.avatarBase64 }) });
+                            const res = await fetch(`${apiUrl}/users/${user.id}/profile`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: profileForm.name, avatar: profileForm.avatarBase64 }) });
                             const data = await res.json();
                             setUser(data); showNotif("Profil Tersimpan");
                         } catch(e) {}
@@ -359,7 +359,7 @@ export default function App() {
                       e.preventDefault();
                       const newBook = { id: Date.now().toString(), ...bookForm, status: 'approved', cover: bookForm.coverBase64 || 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?q=80&w=300' };
                       try {
-                          await fetch(`${API_URL}/books`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newBook) });
+                          await fetch(`${apiUrl}/books`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newBook) });
                           setBooks([...books, newBook]);
                           showNotif("Buku berhasil disimpan!");
                       } catch(e) {}
@@ -395,8 +395,8 @@ export default function App() {
                             <td className="p-4 font-bold text-sm">{b.title} <span className="block text-[10px] text-gray-400 uppercase mt-1">Kelas {b.grade}</span></td>
                             <td className="p-4 text-center">
                               <button onClick={async () => {
-                                if(confirm("Hapus Buku?")) {
-                                  await fetch(`${API_URL}/books/${b.id}`, { method: 'DELETE' });
+                                if(window.confirm("Hapus Buku?")) {
+                                  await fetch(`${apiUrl}/books/${b.id}`, { method: 'DELETE' });
                                   setBooks(books.filter(bk => bk.id !== b.id));
                                   showNotif("Buku Dihapus", "info");
                                 }
@@ -420,7 +420,7 @@ export default function App() {
                 <form onSubmit={async (e) => {
                     e.preventDefault();
                     try {
-                        await fetch(`${API_URL}/students/bulk`, {
+                        await fetch(`${apiUrl}/students/bulk`, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ students: [{ ...studentInput, subClass: studentInput.sub }] })
                         });
@@ -463,51 +463,45 @@ export default function App() {
                   </button>
               )}
               
-              <button onClick={() => { setUser(null); setServerStatus('checking'); }} className="flex flex-col items-center gap-1 text-red-400">
+              <button onClick={() => { setUser(null); setServerStatus('checking'); }} className="flex flex-col items-center gap-1 text-red-400 transition-all hover:scale-110">
                   <LogOut size={24}/>
                   <span className="text-[8px] font-black uppercase tracking-widest">Keluar</span>
               </button>
           </nav>
       )}
 
-      {/* Pembaca PDF */}
-      {readingBook && (
-        <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col p-2 md:p-10 animate-fadeIn pb-20 md:pb-10">
-          <div className="max-w-6xl mx-auto w-full h-full bg-white rounded-3xl md:rounded-[3rem] overflow-hidden shadow-2xl flex flex-col relative">
-            <div className="p-4 md:p-6 bg-slate-900 text-white flex justify-between items-center">
-              <h3 className="font-black text-xs md:text-sm uppercase leading-none line-clamp-1 ml-2"><BookIcon size={16} className="inline mr-2 text-yellow-400"/> {readingBook.title}</h3>
-              <button onClick={() => { setReadingBook(null); fetch(`${API_URL}/stats/reading-stop`, {method:'POST'}); }} className="bg-red-500 p-2 md:p-3 rounded-xl hover:bg-red-600 transition-all"><X size={16}/></button>
-            </div>
-            <div className="flex-grow bg-slate-100">
-              {readingBook.fileBase64 ? (
-                <iframe src={readingBook.fileBase64} className="w-full h-full border-none bg-white" />
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center opacity-30">
-                  <FileText size={80} className="mx-auto mb-4" />
-                  <p className="font-black uppercase tracking-widest text-sm">File PDF Kosong</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast */}
+      {/* NOTIFIKASI TOAST */}
       {notification && (
-        <div className={`fixed top-10 md:top-auto md:bottom-10 left-1/2 -translate-x-1/2 z-[300] px-6 py-3 md:px-10 md:py-5 rounded-full md:rounded-[2rem] shadow-2xl animate-slideUp flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-900 text-white'}`}>
-           {notification.type === 'error' ? <XCircle size={16}/> : <CheckCircle size={16}/>}
-           <span className="font-black text-[10px] md:text-xs uppercase tracking-widest">{notification.msg}</span>
+        <div className={`fixed top-10 left-1/2 -translate-x-1/2 p-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-fadeIn z-[1000] ${notification.type === 'error' ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}`}>
+            {notification.type === 'error' ? <XCircle size={20}/> : <CheckCircle size={20}/>}
+            <span className="font-bold text-sm">{notification.msg}</span>
         </div>
       )}
 
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
-        @media (min-width: 768px) { @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } } }
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
-        .animate-slideUp { animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 1rem); }
-      `}} />
+      {/* MODAL BACA BUKU */}
+      {readingBook && (
+        <div className="fixed inset-0 z-[600] bg-black/90 flex flex-col p-4 md:p-10 animate-fadeIn">
+            <div className="flex justify-between items-center bg-white p-4 rounded-3xl mb-4 max-w-5xl mx-auto w-full">
+                <div>
+                    <h3 className="font-black text-blue-900">{readingBook.title}</h3>
+                    <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">{readingBook.author}</p>
+                </div>
+                <button onClick={() => setReadingBook(null)} className="p-3 bg-red-100 text-red-600 rounded-xl hover:bg-red-500 hover:text-white transition-all"><X size={20}/></button>
+            </div>
+            <div className="flex-grow bg-white rounded-[2rem] overflow-hidden flex items-center justify-center max-w-5xl mx-auto w-full shadow-2xl">
+                {readingBook.fileBase64 ? (
+                   <iframe src={readingBook.fileBase64} className="w-full h-full border-none" title={readingBook.title}></iframe>
+                ) : (
+                   <div className="text-center text-gray-400 flex flex-col items-center">
+                       <BookIcon size={64} className="mx-auto mb-6 opacity-20"/>
+                       <p className="font-black uppercase tracking-widest">Konten PDF tidak tersedia</p>
+                       <p className="text-xs mt-2">Silakan hubungi pustakawan.</p>
+                   </div>
+                )}
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }

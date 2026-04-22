@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Users, Shield, Library, X, FileText, Book as BookIcon, 
   Activity, LogOut, Database, CheckCircle, XCircle, Info, KeyRound, GraduationCap,
-  PlusCircle, Edit3, Trash2, Check, UserPlus, Star, User, Camera, Trophy
+  PlusCircle, Edit3, Trash2, Check, Star, User, Camera, Trophy
 } from 'lucide-react';
 
-// DETEKSI IP DINAMIS AGAR BISA DIAKSES DARI HP
-const HOST = window.location.hostname || 'localhost';
-const API_URL = `http://${HOST}:5000/api`;
-
 export default function App() {
+  // Pengaturan Jaringan Lokal (WiFi)
+  const [serverIp, setServerIp] = useState('localhost');
+  const API_URL = `http://${serverIp}:5000/api`;
+
   // Auth State
   const [user, setUser] = useState(null);
   const [userType, setUserType] = useState('siswa'); // 'siswa' atau 'admin'
@@ -19,7 +19,7 @@ export default function App() {
   const [serverStatus, setServerStatus] = useState('checking'); 
   
   // UI State
-  const [currentView, setCurrentView] = useState('home'); // home, admin, profile, ranking
+  const [currentView, setCurrentView] = useState('home'); 
   const [notification, setNotification] = useState(null);
   const [readingBook, setReadingBook] = useState(null);
   const [adminTab, setAdminTab] = useState('siswa');
@@ -30,25 +30,50 @@ export default function App() {
   const [profileForm, setProfileForm] = useState({ name: '', avatarBase64: '' });
   const [bookForm, setBookForm] = useState({ title: '', author: '', grade: 'X', category: 'Umum', coverBase64: '', fileBase64: '' });
 
-  // Sync Server
+  // Sync Server Dinamis dengan IP
   useEffect(() => {
+    let isMounted = true;
+
     const checkServer = async () => {
       try {
-        const res = await fetch(`${API_URL}/books`);
-        if (res.ok) {
+        const res = await fetch(`http://${serverIp}:5000/api/books`);
+        if (res.ok && isMounted) {
           const data = await res.json();
           setBooks(data);
           setServerStatus('online');
+        } else {
+          if (isMounted) setServerStatus('offline');
         }
       } catch (e) {
-        setServerStatus('offline');
-        setBooks([]); 
+        if (isMounted) {
+          setServerStatus('offline');
+          setBooks([]); 
+        }
       }
     };
-    checkServer();
-    const interval = setInterval(checkServer, 5000);
-    return () => clearInterval(interval);
-  }, []);
+
+    if (serverStatus === 'checking') {
+      checkServer();
+    }
+
+    const interval = setInterval(() => {
+      if (serverStatus === 'online') {
+        fetch(`http://${serverIp}:5000/api/stats`)
+          .then(r => r.json())
+          .then(data => { if(isMounted) setStats(data); })
+          .catch(() => { if(isMounted) setServerStatus('offline'); });
+          
+        fetch(`http://${serverIp}:5000/api/stats/heartbeat`, { method: 'POST' }).catch(() => {});
+      }
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [serverStatus, serverIp]);
+
+  const [stats, setStats] = useState({ active: 0, reading: 0, totalVisits: 0 });
 
   const showNotif = (msg, type = 'success') => setNotification({ msg, type });
 
@@ -91,7 +116,7 @@ export default function App() {
       } else {
         showNotif(data.message, "error");
       }
-    } catch (e) { showNotif("Server Terputus", "error"); }
+    } catch (e) { showNotif("Server Terputus / Diblokir Browser", "error"); }
   };
 
   // --- PROFILE LOGIC ---
@@ -117,19 +142,43 @@ export default function App() {
     } catch (e) { showNotif("Gagal perbarui", "error"); }
   };
 
-  // --- RENDERER OFFLINE & LOGIN ---
+  // --- RENDERER OFFLINE (FORM IP CUSTOM) ---
   if (serverStatus === 'offline') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
-        <div className="bg-white p-10 rounded-[3rem] shadow-2xl max-w-md border-t-8 border-red-500">
-          <Activity size={60} className="mx-auto text-red-500 mb-6 animate-bounce" />
-          <h1 className="text-2xl font-black text-gray-800 uppercase italic">Server Perpus Offline</h1>
-          <p className="text-xs text-gray-500 mt-4 font-bold">Pastikan CMD 'node server.js' menyala di komputer utama, dan kamu mengakses IP yang benar (cth: 192.168.x.x).</p>
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 md:p-6 text-center font-sans">
+        <div className="bg-white p-6 md:p-10 rounded-[3rem] shadow-2xl w-full max-w-md border-t-8 border-red-500 animate-fadeIn">
+          <Activity size={60} className="mx-auto text-red-500 mb-6 animate-pulse" />
+          <h1 className="text-2xl font-black text-gray-800 uppercase italic">Koneksi Server</h1>
+          
+          <div className="mt-6 mb-6 text-left">
+            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Alamat IP Server Komputer</label>
+            <input 
+              type="text" 
+              value={serverIp}
+              onChange={(e) => setServerIp(e.target.value)}
+              placeholder="Contoh: 192.168.1.15"
+              className="w-full p-4 border-2 border-gray-200 rounded-2xl font-mono font-bold text-center text-lg outline-none focus:border-blue-500 transition-colors"
+            />
+            <p className="text-[9px] text-gray-400 mt-2 font-bold leading-relaxed">Jika memakai HP di WiFi yang sama, ubah "localhost" menjadi IPv4 komputermu (misal: 192.168.1.5).</p>
+          </div>
+
+          <button 
+            onClick={() => setServerStatus('checking')} 
+            className="w-full bg-blue-900 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-blue-800 shadow-xl transition-all active:scale-95"
+          >
+            Hubungkan Sekarang
+          </button>
+
+          <div className="mt-6 p-4 bg-yellow-50 rounded-2xl text-left border border-yellow-200">
+            <p className="text-[10px] text-yellow-800 font-black uppercase mb-1"><Info size={12} className="inline mb-0.5 mr-1"/>Penting untuk Akses HP:</p>
+            <p className="text-[9px] text-yellow-700 font-medium leading-relaxed">Browser HP mungkin memblokir karena "Mixed Content". Jika gagal konek, buka <b>Site Settings (Pengaturan Situs)</b> di browser HP kamu, lalu izinkan <b>Insecure Content (Konten Tidak Aman)</b> untuk web ini.</p>
+          </div>
         </div>
       </div>
     );
   }
 
+  // --- RENDERER LOGIN ---
   if (!user) {
     return (
       <div className="min-h-screen bg-blue-950 flex flex-col items-center justify-center p-4">
@@ -141,8 +190,8 @@ export default function App() {
           </div>
           
           <div className="flex border-b border-gray-100">
-            <button onClick={() => setUserType('siswa')} className={`flex-1 py-4 text-xs font-black uppercase flex justify-center items-center gap-2 ${userType === 'siswa' ? 'bg-blue-50 text-blue-900 border-b-4 border-blue-900' : 'text-gray-400'}`}><GraduationCap size={16}/> Siswa</button>
-            <button onClick={() => setUserType('admin')} className={`flex-1 py-4 text-xs font-black uppercase flex justify-center items-center gap-2 ${userType === 'admin' ? 'bg-blue-50 text-blue-900 border-b-4 border-blue-900' : 'text-gray-400'}`}><KeyRound size={16}/> Admin</button>
+            <button onClick={() => setUserType('siswa')} className={`flex-1 py-4 text-xs font-black uppercase flex justify-center items-center gap-2 transition-colors ${userType === 'siswa' ? 'bg-blue-50 text-blue-900 border-b-4 border-blue-900' : 'text-gray-400'}`}><GraduationCap size={16}/> Siswa</button>
+            <button onClick={() => setUserType('admin')} className={`flex-1 py-4 text-xs font-black uppercase flex justify-center items-center gap-2 transition-colors ${userType === 'admin' ? 'bg-blue-50 text-blue-900 border-b-4 border-blue-900' : 'text-gray-400'}`}><KeyRound size={16}/> Admin</button>
           </div>
 
           <div className="p-8">
@@ -153,8 +202,8 @@ export default function App() {
               
               {userType === 'admin' ? (
                 <>
-                  <input required placeholder="Username" className="w-full p-4 bg-gray-50 border rounded-2xl outline-none" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} />
-                  <input required type="password" placeholder="Password Admin" className="w-full p-4 bg-gray-50 border rounded-2xl outline-none font-mono" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} />
+                  <input required placeholder="Username Admin" className="w-full p-4 bg-gray-50 border rounded-2xl outline-none focus:border-blue-500" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} />
+                  <input required type="password" placeholder="Password Admin" className="w-full p-4 bg-gray-50 border rounded-2xl outline-none font-mono focus:border-blue-500" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} />
                 </>
               ) : (
                 <input required placeholder="Masukkan NISN Kamu" className="w-full p-5 bg-gray-50 border-2 rounded-2xl outline-none focus:border-blue-500 font-mono text-center text-lg tracking-widest" value={loginForm.nisn} onChange={e => setLoginForm({...loginForm, nisn: e.target.value})} />
@@ -164,15 +213,18 @@ export default function App() {
             </form>
           </div>
         </div>
-        <p className="mt-8 text-[10px] text-blue-300 uppercase tracking-widest font-black">Sistem Terhubung ke: {HOST}</p>
+        <p className="mt-8 text-[10px] text-blue-300 uppercase tracking-widest font-black flex items-center gap-2">
+            <Activity size={12} className="animate-pulse" /> Terhubung ke Server: {serverIp}
+        </p>
       </div>
     );
   }
 
+  // --- RENDERER DASHBOARD UTAMA ---
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans pb-24 md:pb-0">
       
-      {/* NAVBAR DESKTOP (Sembunyi di HP) */}
+      {/* NAVBAR DESKTOP */}
       <nav className="bg-blue-900 text-white p-5 shadow-xl sticky top-0 z-50 hidden md:block">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentView('home')}>
@@ -180,10 +232,10 @@ export default function App() {
             <span className="font-black text-xl tracking-tighter uppercase italic">SMANSA</span>
           </div>
           <div className="flex items-center gap-6">
-            <button onClick={() => setCurrentView('home')} className={`font-black text-xs uppercase tracking-widest ${currentView==='home'?'text-yellow-400':'hover:text-yellow-400'}`}>Beranda</button>
-            <button onClick={() => setCurrentView('profile')} className={`font-black text-xs uppercase tracking-widest ${currentView==='profile'?'text-yellow-400':'hover:text-yellow-400'}`}>Profil Saya</button>
-            {user.level === 'Admin' && <button onClick={() => setCurrentView('admin')} className={`font-black text-xs uppercase tracking-widest flex items-center gap-1 ${currentView==='admin'?'text-yellow-400':'text-gray-300'}`}><Shield size={14}/> Admin</button>}
-            <button onClick={() => setUser(null)} className="p-2 bg-red-500/20 text-red-300 rounded-xl hover:bg-red-500/40"><LogOut size={20}/></button>
+            <button onClick={() => setCurrentView('home')} className={`font-black text-xs uppercase tracking-widest transition-colors ${currentView==='home'?'text-yellow-400':'hover:text-yellow-400'}`}>Beranda</button>
+            {user.level !== 'Admin' && <button onClick={() => setCurrentView('profile')} className={`font-black text-xs uppercase tracking-widest transition-colors ${currentView==='profile'?'text-yellow-400':'hover:text-yellow-400'}`}>Profil Saya</button>}
+            {user.level === 'Admin' && <button onClick={() => setCurrentView('admin')} className={`font-black text-xs uppercase tracking-widest flex items-center gap-1 transition-colors ${currentView==='admin'?'text-yellow-400':'text-gray-300'}`}><Shield size={14}/> Admin</button>}
+            <button onClick={() => { setUser(null); setServerStatus('checking'); }} className="p-2 bg-red-500/20 text-red-300 rounded-xl hover:bg-red-500/40"><LogOut size={20}/></button>
           </div>
         </div>
       </nav>
@@ -258,7 +310,7 @@ export default function App() {
                         ) : (
                             <User size={64} className="text-blue-300"/>
                         )}
-                        <label className="absolute bottom-0 w-full bg-black/50 text-white p-2 cursor-pointer hover:bg-black/70 flex justify-center">
+                        <label className="absolute bottom-0 w-full bg-black/50 text-white p-2 cursor-pointer hover:bg-black/70 flex justify-center transition-colors">
                             <Camera size={14}/>
                             <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                                 if(e.target.files[0]) {
@@ -273,9 +325,9 @@ export default function App() {
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">NISN: {user.nisn} • Kelas {user.grade}-{user.subClass}</p>
 
                     <form onSubmit={handleUpdateProfile} className="bg-gray-50 p-6 rounded-3xl space-y-4">
-                        <label className="block text-left text-[10px] font-black uppercase text-gray-500">Ubah Nama Tampilan</label>
-                        <input required className="w-full p-4 border rounded-2xl bg-white font-bold" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} />
-                        <button type="submit" className="w-full bg-blue-900 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs hover:bg-blue-800">Simpan Profil (+50 XP)</button>
+                        <label className="block text-left text-[10px] font-black uppercase text-gray-500">Ubah Nama Tampilan (Samaran)</label>
+                        <input required className="w-full p-4 border rounded-2xl bg-white font-bold outline-none focus:border-blue-500" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} />
+                        <button type="submit" className="w-full bg-blue-900 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs hover:bg-blue-800 transition-colors">Simpan Profil (+50 XP)</button>
                     </form>
                 </div>
             </div>
@@ -286,7 +338,7 @@ export default function App() {
           <div className="space-y-6 animate-fadeIn">
             <div className="flex bg-white p-2 rounded-2xl shadow-sm border overflow-x-auto">
               {['koleksi', 'siswa'].map(t => (
-                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 px-6 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${adminTab === t ? 'bg-blue-900 text-white shadow-md' : 'text-gray-400'}`}>
+                <button key={t} onClick={() => setAdminTab(t)} className={`flex-1 py-3 px-6 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${adminTab === t ? 'bg-blue-900 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}>
                   Kelola {t}
                 </button>
               ))}
@@ -296,7 +348,7 @@ export default function App() {
               <div className="bg-white p-8 rounded-[2rem] shadow-xl space-y-6">
                 <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-200">
                     <h3 className="font-black text-yellow-800 uppercase text-xs mb-1">Penting!</h3>
-                    <p className="text-[10px] text-yellow-700 font-bold">Masukkan NISN siswa. Hanya NISN yang ada di sini yang bisa login ke dalam aplikasi.</p>
+                    <p className="text-[10px] text-yellow-700 font-bold">Masukkan NISN siswa di bawah ini agar mereka bisa login di HP mereka masing-masing.</p>
                 </div>
                 <form onSubmit={async (e) => {
                     e.preventDefault();
@@ -307,16 +359,16 @@ export default function App() {
                         });
                         showNotif(`Siswa terdaftar! Kini NISN ${studentInput.nisn} bisa login.`);
                         setStudentInput({ ...studentInput, nisn: '' });
-                    } catch(e) { showNotif("Gagal", "error"); }
+                    } catch(e) { showNotif("Gagal terkoneksi ke Server Lokal", "error"); }
                 }} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <input required placeholder="NISN Siswa" className="p-4 bg-gray-50 rounded-xl border text-sm font-mono" value={studentInput.nisn} onChange={e => setStudentInput({...studentInput, nisn: e.target.value})} />
-                  <select className="p-4 bg-gray-50 rounded-xl border font-black text-xs" value={studentInput.grade} onChange={e => setStudentInput({...studentInput, grade: e.target.value})}>
+                  <input required placeholder="NISN Siswa" className="p-4 bg-gray-50 rounded-xl border text-sm font-mono outline-none focus:border-blue-500" value={studentInput.nisn} onChange={e => setStudentInput({...studentInput, nisn: e.target.value})} />
+                  <select className="p-4 bg-gray-50 rounded-xl border font-black text-xs outline-none" value={studentInput.grade} onChange={e => setStudentInput({...studentInput, grade: e.target.value})}>
                     <option>X</option><option>XI</option><option>XII</option>
                   </select>
-                  <select className="p-4 bg-gray-50 rounded-xl border font-black text-xs" value={studentInput.sub} onChange={e => setStudentInput({...studentInput, sub: e.target.value})}>
+                  <select className="p-4 bg-gray-50 rounded-xl border font-black text-xs outline-none" value={studentInput.sub} onChange={e => setStudentInput({...studentInput, sub: e.target.value})}>
                     {[...Array(11)].map((_, i) => <option key={i+1} value={i+1}>Ruang {i+1}</option>)}
                   </select>
-                  <button className="bg-blue-900 text-white rounded-xl font-black text-[10px] uppercase shadow-md">Daftarkan NISN</button>
+                  <button className="bg-blue-900 text-white rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-blue-800 transition-all">Daftarkan NISN</button>
                 </form>
               </div>
             )}
@@ -334,9 +386,9 @@ export default function App() {
                           showNotif("Buku berhasil diposting!");
                       } catch(e) {}
                   }} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <input required className="p-4 border rounded-xl text-sm bg-gray-50" placeholder="Judul Buku" value={bookForm.title} onChange={e => setBookForm({...bookForm, title: e.target.value})} />
-                    <input required className="p-4 border rounded-xl text-sm bg-gray-50" placeholder="Penulis/Mapel" value={bookForm.author} onChange={e => setBookForm({...bookForm, author: e.target.value})} />
-                    <select className="p-4 border rounded-xl text-sm font-bold bg-gray-50" value={bookForm.grade} onChange={e => setBookForm({...bookForm, grade: e.target.value})}>
+                    <input required className="p-4 border rounded-xl text-sm bg-gray-50 outline-none" placeholder="Judul Buku" value={bookForm.title} onChange={e => setBookForm({...bookForm, title: e.target.value})} />
+                    <input required className="p-4 border rounded-xl text-sm bg-gray-50 outline-none" placeholder="Penulis/Mapel" value={bookForm.author} onChange={e => setBookForm({...bookForm, author: e.target.value})} />
+                    <select className="p-4 border rounded-xl text-sm font-bold bg-gray-50 outline-none" value={bookForm.grade} onChange={e => setBookForm({...bookForm, grade: e.target.value})}>
                       <option value="X">Kelas X</option><option value="XI">Kelas XI</option><option value="XII">Kelas XII</option>
                     </select>
                     <div className="p-3 border rounded-xl text-xs bg-blue-50 flex items-center md:col-span-2">
@@ -346,9 +398,9 @@ export default function App() {
                                 const b64 = await convertToBase64(e.target.files[0]);
                                 setBookForm({...bookForm, fileBase64: b64});
                             }
-                        }} className="w-full font-bold" />
+                        }} className="w-full font-bold text-blue-900" />
                     </div>
-                    <button type="submit" className="bg-blue-900 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md">Simpan Buku</button>
+                    <button type="submit" className="bg-blue-900 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md hover:bg-blue-800 transition-colors">Simpan Buku</button>
                   </form>
                 </div>
               </div>
@@ -382,7 +434,7 @@ export default function App() {
                   </button>
               )}
               
-              <button onClick={() => { setUser(null); setCurrentView('home'); }} className="flex flex-col items-center gap-1 text-red-400 hover:text-red-600 transition-all">
+              <button onClick={() => { setUser(null); setServerStatus('checking'); }} className="flex flex-col items-center gap-1 text-red-400 hover:text-red-600 transition-all">
                   <LogOut size={24}/>
                   <span className="text-[8px] font-black uppercase tracking-widest">Keluar</span>
               </button>
@@ -400,7 +452,7 @@ export default function App() {
                   <h3 className="font-black text-xs md:text-sm uppercase leading-none line-clamp-1">{readingBook.title}</h3>
                 </div>
               </div>
-              <button onClick={() => setReadingBook(null)} className="bg-red-500 p-2 md:p-3 rounded-xl hover:bg-red-600 transition-all"><X size={16}/></button>
+              <button onClick={() => { setReadingBook(null); fetch(`${API_URL}/stats/reading-stop`, {method:'POST'}); }} className="bg-red-500 p-2 md:p-3 rounded-xl hover:bg-red-600 transition-all"><X size={16}/></button>
             </div>
             <div className="flex-grow bg-slate-100">
               {readingBook.fileBase64 ? (

@@ -83,7 +83,7 @@ export default function App() {
   const calculateLevel = (xp) => Math.floor((xp || 0) / 100) + 1;
   const getXpProgress = (xp) => ((xp || 0) % 100);
 
-  // --- AUTH LOGIC (DIPERBAIKI) ---
+  // --- AUTH ---
   const handleLogin = async (e) => {
     e.preventDefault();
     if (userType === 'admin' && loginForm.username === 'admin' && loginForm.password === 'admin1234') {
@@ -92,12 +92,7 @@ export default function App() {
         showNotif('Login Admin Berhasil');
         return;
     }
-
-    // Pastikan mengirimkan nisn tanpa spasi
-    const payload = userType === 'admin' 
-        ? { is_admin: true, username: loginForm.username, password: loginForm.password } 
-        : { is_admin: false, nisn: loginForm.nisn.trim() }; // Mencegah error spasi
-
+    const payload = userType === 'admin' ? { is_admin: true, username: loginForm.username, password: loginForm.password } : { is_admin: false, nisn: loginForm.nisn.trim() };
     try {
       const res = await fetch(`${API_URL}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
@@ -126,7 +121,7 @@ export default function App() {
         <div className="bg-gray-900 p-10 rounded-[3rem] shadow-[0_0_50px_rgba(0,0,0,0.5)] max-w-md border-t-8 border-red-500 w-full relative">
           <Activity size={60} className="mx-auto text-red-500 mb-6 animate-pulse" />
           <h1 className="text-2xl font-black uppercase italic tracking-widest text-white">Server Offline</h1>
-          <p className="text-sm text-gray-400 mt-4 font-medium">Pastikan <code className="text-red-400 bg-gray-800 px-2 py-1 rounded">node server.js</code> sudah menyala di terminalmu.</p>
+          <p className="text-sm text-gray-400 mt-4 font-medium">Jalankan <code className="text-red-400 bg-gray-800 px-2 py-1 rounded">node server.js</code> di komputermu untuk terhubung.</p>
           <button onClick={() => setServerStatus('checking')} className="w-full mt-8 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-blue-500 transition-all">Muat Ulang</button>
         </div>
       </div>
@@ -155,11 +150,12 @@ export default function App() {
                 <div className="animate-fadeIn">
                   <input required placeholder="Username Admin" className="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-2xl outline-none focus:border-blue-500 mb-4" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} />
                   <input required type="password" placeholder="Password" className="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-2xl outline-none font-mono focus:border-blue-500" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} />
+                  <p className="text-[10px] text-gray-500 text-center font-bold mt-4">Gunakan: admin / admin1234</p>
                 </div>
               ) : (
                 <div className="animate-fadeIn">
                   <div className="bg-gray-800 p-4 rounded-2xl mb-4 border border-gray-700">
-                      <p className="text-[10px] text-gray-400 text-center leading-relaxed">Masukkan NISN kamu. Pastikan Admin sudah mendaftarkan NISN kamu ke database.</p>
+                      <p className="text-[10px] text-gray-400 text-center leading-relaxed">Masukkan NISN kamu. Pastikan Admin sudah mendaftarkan NISN kamu ke dalam database agar bisa masuk.</p>
                   </div>
                   <input required placeholder="Masukkan NISN" className="w-full p-5 bg-gray-950 text-white border-2 border-gray-700 rounded-2xl outline-none focus:border-blue-500 font-mono text-center text-lg tracking-widest placeholder-gray-700" value={loginForm.nisn} onChange={e => setLoginForm({...loginForm, nisn: e.target.value})} />
                 </div>
@@ -172,7 +168,7 @@ export default function App() {
     );
   }
 
-  // --- TAMPILAN DASHBOARD ---
+  // --- TAMPILAN DASHBOARD (DARK MODE) ---
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col font-sans pb-24 md:pb-0 text-gray-200">
       
@@ -198,7 +194,7 @@ export default function App() {
             
             <div className="h-8 w-px bg-gray-700 mx-2"></div>
             
-            {/* Profil Mini Navbar */}
+            {/* Tampilan Profil Mini di Navbar Desktop */}
             <div onClick={() => { if(user.level !== 'Admin') setCurrentView('profile'); }} className="flex items-center gap-3 cursor-pointer hover:bg-gray-800 p-2 rounded-xl transition-colors">
                 <div className="text-right">
                     <p className="text-xs font-black text-white">{user.name.split(' ')[0]}</p>
@@ -220,7 +216,7 @@ export default function App() {
         {/* HALAMAN HOME / KATALOG */}
         {currentView === 'home' && (
           <div className="space-y-8 animate-fadeIn">
-            {/* Header */}
+            {/* Header Profil Singkat untuk HP, karena navbar HP sempit */}
             <div className="bg-gray-900 border border-gray-800 p-6 md:p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
                <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
                   <div className="text-center md:text-left">
@@ -232,7 +228,7 @@ export default function App() {
                     <div className="bg-gray-950 border border-gray-800 p-4 rounded-3xl w-full md:w-64 text-center">
                         <div className="flex justify-between items-end mb-2">
                             <span className="font-black uppercase tracking-widest text-xs text-white"><Star className="inline w-4 text-blue-400 mb-1"/> Level {calculateLevel(user.xp)}</span>
-                            <span className="text-[10px] font-bold text-gray-500">{user.xp} XP</span>
+                            <span className="text-[10px] font-bold text-gray-500">{user.xp} XP (Online: +1/10s)</span>
                         </div>
                         <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
                             <div className="bg-blue-500 h-3 rounded-full transition-all duration-1000" style={{width: `${getXpProgress(user.xp)}%`}}></div>
@@ -242,7 +238,7 @@ export default function App() {
                </div>
             </div>
 
-            {/* Katalog Buku */}
+            {/* Katalog Buku & Karya */}
             <div>
               <h2 className="text-xl font-black uppercase italic tracking-widest text-white mb-6 border-l-4 border-blue-500 pl-3">Katalog Terbaru</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
@@ -308,6 +304,7 @@ export default function App() {
                                 <span className={`text-[10px] font-bold uppercase text-center ${bookForm.fileBase64 ? 'text-blue-400' : 'text-gray-500'}`}>{bookForm.fileBase64 ? 'PDF Terpilih!' : 'Pilih File PDF (Wajib)'}</span>
                             </div>
                         </div>
+
                         <button type="submit" className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-blue-500 transition-all">Kirim Karya</button>
                     </form>
                 </div>
@@ -352,7 +349,7 @@ export default function App() {
                     </div>
 
                     <div className="bg-gray-900 p-8 rounded-[2rem] border border-gray-800">
-                        <h3 className="font-black text-sm text-white uppercase tracking-widest border-b border-gray-800 pb-4 mb-4">Permintaan Masuk</h3>
+                        <h3 className="font-black text-sm text-white uppercase tracking-widest border-b border-gray-800 pb-4 mb-4">Permintaan Teman</h3>
                         <div className="space-y-4">
                             {friendsData.requests.map(r => (
                                 <div key={r.id} className="flex items-center justify-between bg-gray-950 p-4 rounded-2xl border border-gray-800">
@@ -368,7 +365,7 @@ export default function App() {
                                     }} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-500"><Check size={16}/></button>
                                 </div>
                             ))}
-                            {friendsData.requests.length === 0 && <p className="text-center text-xs text-gray-600 font-bold py-6">Tidak ada permintaan.</p>}
+                            {friendsData.requests.length === 0 && <p className="text-center text-xs text-gray-600 font-bold py-6">Tidak ada permintaan baru.</p>}
                         </div>
                     </div>
                 </div>
@@ -421,17 +418,17 @@ export default function App() {
               ))}
             </div>
 
-            {/* Admin: Dashboard */}
+            {/* Admin: Dashboard (Online Stats) */}
             {adminTab === 'dashboard' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-gray-900 p-10 rounded-[3rem] border border-gray-800 flex flex-col items-center justify-center text-center">
                   <Activity size={40} className="text-green-500 mb-4 animate-pulse"/>
-                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-1">User Online (Live)</h3>
+                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-1">User Online (Real-time)</h3>
                   <p className="text-7xl font-black text-white">{onlineUsers}</p>
                 </div>
                 <div className="bg-gray-900 p-10 rounded-[3rem] border border-gray-800 flex flex-col items-center justify-center text-center">
                   <BookOpen size={40} className="text-blue-500 mb-4"/>
-                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-1">Koleksi Aktif</h3>
+                  <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest mb-1">Total Koleksi Aktif</h3>
                   <p className="text-7xl font-black text-white">{books.filter(b=>b.status==='approved').length}</p>
                 </div>
                 <div className="bg-gray-900 p-10 rounded-[3rem] border border-gray-800 flex flex-col items-center justify-center text-center">

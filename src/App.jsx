@@ -2,12 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Users, Shield, Library, X, FileText, Book as BookIcon, 
   Activity, LogOut, CheckCircle, XCircle, KeyRound, GraduationCap,
-  PlusCircle, Trash2, Check, Star, User, Camera, Trophy, Home, Search, UploadCloud, UserPlus
+  PlusCircle, Trash2, Check, Star, User, Camera, Trophy, Home, Search, UploadCloud, UserPlus, Eye, MessageSquare, Clock, Award
 } from 'lucide-react';
 
 let hostIp = window.location.hostname;
 if (hostIp.includes('google') || hostIp.includes('usercontent')) hostIp = 'localhost';
 const API_URL = `http://${hostIp}:5000/api`;
+
+// Helper Waktu Online
+const timeAgo = (ms) => {
+    if (!ms) return 'Belum pernah online';
+    const seconds = Math.floor((Date.now() - ms) / 1000);
+    if (seconds < 60) return 'Baru saja online';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} menit yang lalu`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} jam yang lalu`;
+    return `${Math.floor(hours / 24)} hari yang lalu`;
+};
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -15,12 +27,19 @@ export default function App() {
   const [books, setBooks] = useState([]);
   const [masterStudents, setMasterStudents] = useState([]);
   const [friendsData, setFriendsData] = useState({ friends: [], requests: [] });
+  const [leaderboardData, setLeaderboardData] = useState({ topXP: [], topCreators: [] });
   const [serverStatus, setServerStatus] = useState('checking'); 
   const [onlineUsers, setOnlineUsers] = useState(0);
   
   const [currentView, setCurrentView] = useState('home'); 
   const [notification, setNotification] = useState(null);
-  const [readingBook, setReadingBook] = useState(null);
+  
+  // Modals
+  const [readingBook, setReadingBook] = useState(null); // Mode baca PDF / Preview
+  const [bookDetailModal, setBookDetailModal] = useState(null); // Modal detail buku (Views, Komen)
+  const [publicProfileModal, setPublicProfileModal] = useState(null); // Profil orang lain
+  const [isPreviewMode, setIsPreviewMode] = useState(false); 
+  
   const [adminTab, setAdminTab] = useState('koleksi');
 
   // Forms
@@ -29,6 +48,7 @@ export default function App() {
   const [profileForm, setProfileForm] = useState({ name: '', avatarBase64: '' });
   const [bookForm, setBookForm] = useState({ title: '', author: '', grade: 'X', type: 'ebook', coverBase64: '', fileBase64: '' });
   const [friendNisn, setFriendNisn] = useState('');
+  const [commentText, setCommentText] = useState('');
 
   // --- SINKRONISASI SERVER ---
   useEffect(() => {
@@ -51,8 +71,17 @@ export default function App() {
     const interval = setInterval(() => {
       if (serverStatus === 'online') {
         const payload = user ? { userId: user.id } : {};
+        // Heartbeat untuk XP Otomatis
         fetch(`${API_URL}/stats/heartbeat`, { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
-          .then(r => r.json()).then(d => { if(isMounted) setOnlineUsers(d.activeUsers || 0); }).catch(()=>{});
+          .then(r => r.json()).then(d => { 
+              if(isMounted) {
+                  setOnlineUsers(d.activeUsers || 0);
+                  // Update XP UI Otomatis
+                  if (user && user.level !== 'Admin') {
+                      setUser(prev => ({...prev, xp: (prev.xp || 0) + 1}));
+                  }
+              }
+          }).catch(()=>{});
         
         fetch(`${API_URL}/books`).then(r => r.json()).then(d => { if(isMounted) setBooks(d); }).catch(()=>{});
         
@@ -64,16 +93,19 @@ export default function App() {
     return () => { isMounted = false; clearInterval(interval); };
   }, [serverStatus, user]);
 
-  const loadAdminStudents = async () => {
+  const fetchLeaderboard = async () => {
       try {
-          const res = await fetch(`${API_URL}/students`);
-          setMasterStudents(await res.json());
+          const res = await fetch(`${API_URL}/leaderboard`);
+          setLeaderboardData(await res.json());
       } catch(e) {}
   };
 
   useEffect(() => {
-      if (user?.level === 'Admin' && adminTab === 'siswa') loadAdminStudents();
-  }, [user, adminTab]);
+      if (currentView === 'leaderboard') fetchLeaderboard();
+      if (user?.level === 'Admin' && adminTab === 'siswa') {
+          fetch(`${API_URL}/students`).then(r=>r.json()).then(d=>setMasterStudents(d)).catch(()=>{});
+      }
+  }, [currentView, adminTab, user]);
 
   const showNotif = (msg, type = 'success') => {
       setNotification({ msg, type });
@@ -83,7 +115,7 @@ export default function App() {
   const calculateLevel = (xp) => Math.floor((xp || 0) / 100) + 1;
   const getXpProgress = (xp) => ((xp || 0) % 100);
 
-  // --- AUTH ---
+  // --- ACTIONS ---
   const handleLogin = async (e) => {
     e.preventDefault();
     if (userType === 'admin' && loginForm.username === 'admin' && loginForm.password === 'admin1234') {
@@ -101,17 +133,48 @@ export default function App() {
         showNotif(`Login Sukses, ${data.name}`);
         setProfileForm({ name: data.name, avatarBase64: data.avatar || '' });
         setCurrentView(data.level === 'Admin' ? 'admin' : 'home');
-      } else {
-        showNotif(data.message || "Gagal Login", "error");
-      }
+      } else { showNotif(data.message || "Gagal Login", "error"); }
     } catch (e) { showNotif("Server Terputus", "error"); }
   };
 
+  const openPublicProfile = async (id) => {
+      if (id === user?.id) { setCurrentView('profile'); setBookDetailModal(null); return; }
+      try {
+          const res = await fetch(`${API_URL}/users/public/${id}`);
+          if (res.ok) setPublicProfileModal(await res.json());
+      } catch(e) { showNotif("Gagal memuat profil", "error"); }
+  };
+
+  const submitComment = async (e) => {
+      e.preventDefault();
+      if(!commentText.trim()) return;
+      try {
+          const res = await fetch(`${API_URL}/books/${bookDetailModal.id}/comment`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.id, userName: user.name, userAvatar: user.avatar, text: commentText })
+          });
+          const newComment = await res.json();
+          // Update Modal State
+          setBookDetailModal({...bookDetailModal, comments: [...(bookDetailModal.comments||[]), newComment]});
+          setCommentText('');
+      } catch(e) { showNotif("Gagal mengirim komentar", "error"); }
+  };
+
+  const startReading = async (book) => {
+      // Catat Viewer (Kecuali Admin)
+      if (user.level !== 'Admin') {
+          fetch(`${API_URL}/books/${book.id}/view`, { 
+              method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userId: user.id }) 
+          }).catch(()=>{});
+      }
+      setBookDetailModal(null);
+      setReadingBook(book);
+      setIsPreviewMode(false);
+  };
+
   const convertToBase64 = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
+    const reader = new FileReader(); reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result); reader.onerror = error => reject(error);
   });
 
   // --- TAMPILAN OFFLINE ---
@@ -121,7 +184,7 @@ export default function App() {
         <div className="bg-gray-900 p-10 rounded-[3rem] shadow-[0_0_50px_rgba(0,0,0,0.5)] max-w-md border-t-8 border-red-500 w-full relative">
           <Activity size={60} className="mx-auto text-red-500 mb-6 animate-pulse" />
           <h1 className="text-2xl font-black uppercase italic tracking-widest text-white">Server Offline</h1>
-          <p className="text-sm text-gray-400 mt-4 font-medium">Jalankan <code className="text-red-400 bg-gray-800 px-2 py-1 rounded">node server.js</code> di komputermu untuk terhubung.</p>
+          <p className="text-sm text-gray-400 mt-4 font-medium">Jalankan <code className="text-red-400 bg-gray-800 px-2 py-1 rounded">node server.js</code> di komputermu.</p>
           <button onClick={() => setServerStatus('checking')} className="w-full mt-8 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-blue-500 transition-all">Muat Ulang</button>
         </div>
       </div>
@@ -150,12 +213,11 @@ export default function App() {
                 <div className="animate-fadeIn">
                   <input required placeholder="Username Admin" className="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-2xl outline-none focus:border-blue-500 mb-4" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})} />
                   <input required type="password" placeholder="Password" className="w-full p-4 bg-gray-800 text-white border border-gray-700 rounded-2xl outline-none font-mono focus:border-blue-500" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} />
-                  <p className="text-[10px] text-gray-500 text-center font-bold mt-4">Gunakan: admin / admin1234</p>
                 </div>
               ) : (
                 <div className="animate-fadeIn">
                   <div className="bg-gray-800 p-4 rounded-2xl mb-4 border border-gray-700">
-                      <p className="text-[10px] text-gray-400 text-center leading-relaxed">Masukkan NISN kamu. Pastikan Admin sudah mendaftarkan NISN kamu ke dalam database agar bisa masuk.</p>
+                      <p className="text-[10px] text-gray-400 text-center leading-relaxed">Pastikan Admin sudah mendaftarkan NISN kamu ke dalam database agar bisa masuk.</p>
                   </div>
                   <input required placeholder="Masukkan NISN" className="w-full p-5 bg-gray-950 text-white border-2 border-gray-700 rounded-2xl outline-none focus:border-blue-500 font-mono text-center text-lg tracking-widest placeholder-gray-700" value={loginForm.nisn} onChange={e => setLoginForm({...loginForm, nisn: e.target.value})} />
                 </div>
@@ -168,7 +230,7 @@ export default function App() {
     );
   }
 
-  // --- TAMPILAN DASHBOARD (DARK MODE) ---
+  // --- TAMPILAN DASHBOARD ---
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col font-sans pb-24 md:pb-0 text-gray-200">
       
@@ -181,11 +243,12 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-6">
-            <button onClick={() => setCurrentView('home')} className={`font-black text-xs uppercase tracking-widest ${currentView==='home'?'text-blue-400':'hover:text-blue-400'}`}>Beranda</button>
+            <button onClick={() => setCurrentView('home')} className={`font-black text-xs uppercase tracking-widest ${currentView==='home'?'text-blue-400':'hover:text-blue-400'}`}>Katalog</button>
             
             {user.level !== 'Admin' && (
               <>
-                <button onClick={() => setCurrentView('upload')} className={`font-black text-xs uppercase tracking-widest ${currentView==='upload'?'text-blue-400':'hover:text-blue-400'}`}>Upload Karya</button>
+                <button onClick={() => setCurrentView('leaderboard')} className={`font-black text-xs uppercase tracking-widest ${currentView==='leaderboard'?'text-blue-400':'hover:text-blue-400'}`}>Peringkat</button>
+                <button onClick={() => setCurrentView('upload')} className={`font-black text-xs uppercase tracking-widest ${currentView==='upload'?'text-blue-400':'hover:text-blue-400'}`}>Upload</button>
                 <button onClick={() => setCurrentView('friends')} className={`font-black text-xs uppercase tracking-widest ${currentView==='friends'?'text-blue-400':'hover:text-blue-400'}`}>Teman</button>
               </>
             )}
@@ -194,7 +257,6 @@ export default function App() {
             
             <div className="h-8 w-px bg-gray-700 mx-2"></div>
             
-            {/* Tampilan Profil Mini di Navbar Desktop */}
             <div onClick={() => { if(user.level !== 'Admin') setCurrentView('profile'); }} className="flex items-center gap-3 cursor-pointer hover:bg-gray-800 p-2 rounded-xl transition-colors">
                 <div className="text-right">
                     <p className="text-xs font-black text-white">{user.name.split(' ')[0]}</p>
@@ -216,7 +278,7 @@ export default function App() {
         {/* HALAMAN HOME / KATALOG */}
         {currentView === 'home' && (
           <div className="space-y-8 animate-fadeIn">
-            {/* Header Profil Singkat untuk HP, karena navbar HP sempit */}
+            {/* Header Profil Singkat untuk HP */}
             <div className="bg-gray-900 border border-gray-800 p-6 md:p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
                <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
                   <div className="text-center md:text-left">
@@ -225,10 +287,10 @@ export default function App() {
                   </div>
                   
                   {user.level !== 'Admin' && (
-                    <div className="bg-gray-950 border border-gray-800 p-4 rounded-3xl w-full md:w-64 text-center">
+                    <div className="bg-gray-950 border border-gray-800 p-4 rounded-3xl w-full md:w-64 text-center cursor-pointer hover:border-blue-500 transition-colors" onClick={() => setCurrentView('profile')}>
                         <div className="flex justify-between items-end mb-2">
                             <span className="font-black uppercase tracking-widest text-xs text-white"><Star className="inline w-4 text-blue-400 mb-1"/> Level {calculateLevel(user.xp)}</span>
-                            <span className="text-[10px] font-bold text-gray-500">{user.xp} XP (Online: +1/10s)</span>
+                            <span className="text-[10px] font-bold text-gray-500">{user.xp} XP</span>
                         </div>
                         <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
                             <div className="bg-blue-500 h-3 rounded-full transition-all duration-1000" style={{width: `${getXpProgress(user.xp)}%`}}></div>
@@ -238,16 +300,19 @@ export default function App() {
                </div>
             </div>
 
-            {/* Katalog Buku & Karya */}
+            {/* Katalog Buku */}
             <div>
               <h2 className="text-xl font-black uppercase italic tracking-widest text-white mb-6 border-l-4 border-blue-500 pl-3">Katalog Terbaru</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                 {books.filter(b => b.status === 'approved').map(book => (
-                  <div key={book.id} className="bg-gray-900 rounded-[2rem] shadow-lg hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all overflow-hidden flex flex-col border border-gray-800 hover:border-blue-500 group">
+                  <div key={book.id} className="bg-gray-900 rounded-[2rem] shadow-lg hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all overflow-hidden flex flex-col border border-gray-800 hover:border-blue-500 group cursor-pointer" onClick={() => setBookDetailModal(book)}>
                     <div className="h-40 md:h-56 bg-gray-800 relative overflow-hidden">
                       <img src={book.cover} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt={book.title} />
                       <div className="absolute top-3 left-3 bg-blue-600 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase shadow-md">
                           {book.type === 'community' ? 'Karya Siswa' : `Kelas ${book.grade}`}
+                      </div>
+                      <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-sm text-white text-[9px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
+                          <Eye size={10} className="text-blue-400"/> {book.views || 0}
                       </div>
                     </div>
                     <div className="p-4 md:p-6 flex-grow flex flex-col justify-between">
@@ -255,12 +320,6 @@ export default function App() {
                         <h3 className="font-black text-white text-sm md:text-lg leading-tight mb-1 line-clamp-2">{book.title}</h3>
                         <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest italic line-clamp-1">{book.author}</p>
                       </div>
-                      <button 
-                        onClick={() => setReadingBook(book)}
-                        className="w-full mt-4 bg-gray-800 text-blue-400 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all shadow-sm border border-gray-700"
-                      >
-                        Buka Digital
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -275,20 +334,74 @@ export default function App() {
           </div>
         )}
 
+        {/* HALAMAN LEADERBOARD */}
+        {currentView === 'leaderboard' && (
+            <div className="animate-fadeIn space-y-6 max-w-4xl mx-auto">
+                <div className="bg-gray-900 p-8 rounded-[3rem] shadow-xl border border-gray-800 text-center mb-8">
+                    <Trophy size={48} className="mx-auto text-yellow-500 mb-4"/>
+                    <h2 className="text-3xl font-black text-white uppercase italic">Papan Peringkat</h2>
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-2">Siswa Terbaik SMAN 1 Soppeng</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Top XP */}
+                    <div className="bg-gray-900 rounded-[2rem] border border-gray-800 p-6">
+                        <h3 className="font-black text-sm text-white uppercase tracking-widest mb-6 flex items-center gap-2 border-b border-gray-800 pb-4"><Star className="text-blue-400"/> Top Level (XP)</h3>
+                        <div className="space-y-4">
+                            {leaderboardData.topXP.map((u, i) => (
+                                <div key={u.id} onClick={() => openPublicProfile(u.id)} className="flex items-center gap-4 bg-gray-950 p-4 rounded-2xl border border-gray-800 cursor-pointer hover:border-blue-500 transition-colors">
+                                    <div className="font-black text-xl text-gray-700 w-6 text-center">{i+1}</div>
+                                    <div className="w-12 h-12 bg-gray-800 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                                        {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover"/> : <User className="text-gray-500" size={20}/>}
+                                    </div>
+                                    <div className="flex-grow">
+                                        <h4 className="font-black text-white text-sm uppercase">{u.name}</h4>
+                                        <p className="text-[10px] text-gray-500 font-bold uppercase">Level {calculateLevel(u.xp)} • {u.xp} XP</p>
+                                    </div>
+                                    {i === 0 && <Award className="text-yellow-500"/>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Top Creators */}
+                    <div className="bg-gray-900 rounded-[2rem] border border-gray-800 p-6">
+                        <h3 className="font-black text-sm text-white uppercase tracking-widest mb-6 flex items-center gap-2 border-b border-gray-800 pb-4"><UploadCloud className="text-green-400"/> Top Kreator Karya</h3>
+                        <div className="space-y-4">
+                            {leaderboardData.topCreators.map((u, i) => (
+                                <div key={u.id} onClick={() => openPublicProfile(u.id)} className="flex items-center gap-4 bg-gray-950 p-4 rounded-2xl border border-gray-800 cursor-pointer hover:border-green-500 transition-colors">
+                                    <div className="font-black text-xl text-gray-700 w-6 text-center">{i+1}</div>
+                                    <div className="w-12 h-12 bg-gray-800 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0">
+                                        {u.avatar ? <img src={u.avatar} className="w-full h-full object-cover"/> : <User className="text-gray-500" size={20}/>}
+                                    </div>
+                                    <div className="flex-grow">
+                                        <h4 className="font-black text-white text-sm uppercase">{u.name}</h4>
+                                        <p className="text-[10px] text-green-500 font-bold uppercase">{u.count} Karya Terbit</p>
+                                    </div>
+                                    {i === 0 && <Award className="text-yellow-500"/>}
+                                </div>
+                            ))}
+                            {leaderboardData.topCreators.length === 0 && <p className="text-center text-xs text-gray-600 font-bold">Belum ada kreator.</p>}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* UPLOAD KARYA SISWA */}
         {currentView === 'upload' && user.level !== 'Admin' && (
             <div className="animate-fadeIn max-w-3xl mx-auto space-y-6">
                 <div className="bg-gray-900 p-8 md:p-10 rounded-[3rem] shadow-xl border border-gray-800">
                     <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2"><UploadCloud className="inline mr-2 text-blue-500"/> Upload Karyamu</h2>
-                    <p className="text-xs text-gray-400 font-medium mb-8">Kirimkan cerpen, komik, atau esaimu. Karya yang di-ACC Admin akan bisa dibaca seluruh sekolah!</p>
+                    <p className="text-xs text-gray-400 font-medium mb-8">Kirimkan cerpen, komik, atau esaimu. Karya yang di-ACC Admin akan masuk ke Leaderboard Kreator!</p>
 
                     <form onSubmit={async (e) => {
                         e.preventDefault();
-                        const newBook = { id: Date.now().toString(), ...bookForm, type: 'community', status: 'pending', cover: bookForm.coverBase64 || 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?q=80&w=300' };
+                        const newBook = { id: Date.now().toString(), ...bookForm, authorId: user.id, type: 'community', status: 'pending', cover: bookForm.coverBase64 || 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?q=80&w=300' };
                         try {
                             await fetch(`${API_URL}/books`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newBook) });
                             showNotif("Karya terkirim ke server Admin! Menunggu ACC.");
-                            setBookForm({ title: '', author: user.name, grade: user.grade, category: 'Umum', coverBase64: '', fileBase64: '' });
+                            setBookForm({ title: '', author: user.name, grade: user.grade, type: 'ebook', coverBase64: '', fileBase64: '' });
                         } catch(e) {}
                     }} className="space-y-5">
                         <input required className="w-full p-4 bg-gray-950 border border-gray-800 text-white rounded-2xl outline-none focus:border-blue-500" placeholder="Judul Karya" value={bookForm.title} onChange={e => setBookForm({...bookForm, title: e.target.value})} />
@@ -334,7 +447,7 @@ export default function App() {
                         <h3 className="font-black text-sm text-white uppercase tracking-widest border-b border-gray-800 pb-4 mb-4">Daftar Teman</h3>
                         <div className="space-y-4">
                             {friendsData.friends.map(f => (
-                                <div key={f.id} className="flex items-center gap-4 bg-gray-950 p-4 rounded-2xl border border-gray-800">
+                                <div key={f.id} className="flex items-center gap-4 bg-gray-950 p-4 rounded-2xl border border-gray-800 cursor-pointer hover:border-blue-500 transition-colors" onClick={() => openPublicProfile(f.id)}>
                                     <div className="w-12 h-12 bg-gray-800 rounded-full border-2 border-blue-500 overflow-hidden flex items-center justify-center flex-shrink-0">
                                         {f.avatar ? <img src={f.avatar} className="w-full h-full object-cover"/> : <User className="text-gray-500" size={20}/>}
                                     </div>
@@ -353,7 +466,7 @@ export default function App() {
                         <div className="space-y-4">
                             {friendsData.requests.map(r => (
                                 <div key={r.id} className="flex items-center justify-between bg-gray-950 p-4 rounded-2xl border border-gray-800">
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 cursor-pointer" onClick={() => openPublicProfile(r.id)}>
                                         <div className="w-10 h-10 bg-gray-800 rounded-full overflow-hidden flex items-center justify-center">
                                             {r.avatar ? <img src={r.avatar} className="w-full h-full object-cover"/> : <User className="text-gray-500" size={16}/>}
                                         </div>
@@ -526,16 +639,27 @@ export default function App() {
                                 <div>{b.title} <span className="block text-[10px] text-gray-400 uppercase mt-1">Oleh: {b.author}</span></div>
                             </td>
                             <td className="p-4 flex justify-center gap-2">
+                              {/* TOMBOL PRATINJAU (Mata) */}
+                              <button onClick={() => {
+                                  setReadingBook(b);
+                                  setIsPreviewMode(true);
+                              }} className="p-3 bg-blue-500/10 text-blue-400 rounded-xl hover:bg-blue-500 hover:text-white" title="Pratinjau PDF">
+                                  <Eye size={16}/>
+                              </button>
+
                               <button onClick={async () => {
                                   await fetch(`${API_URL}/books/${b.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...b, status:'approved'}) });
                                   setBooks(books.map(bk => bk.id === b.id ? {...bk, status:'approved'} : bk));
                                   showNotif("Karya di-ACC!");
-                              }} className="p-3 bg-green-500/10 text-green-500 rounded-xl hover:bg-green-500 hover:text-white"><Check size={16}/></button>
+                              }} className="p-3 bg-green-500/10 text-green-500 rounded-xl hover:bg-green-500 hover:text-white" title="Terima (ACC)"><Check size={16}/></button>
+                              
                               <button onClick={async () => {
-                                  await fetch(`${API_URL}/books/${b.id}`, { method: 'DELETE' });
-                                  setBooks(books.filter(bk => bk.id !== b.id));
-                                  showNotif("Karya ditolak/dihapus", "info");
-                              }} className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white"><X size={16}/></button>
+                                  if(window.confirm("Tolak dan hapus karya ini?")) {
+                                      await fetch(`${API_URL}/books/${b.id}`, { method: 'DELETE' });
+                                      setBooks(books.filter(bk => bk.id !== b.id));
+                                      showNotif("Karya ditolak/dihapus", "info");
+                                  }
+                              }} className="p-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white" title="Tolak (Hapus)"><X size={16}/></button>
                             </td>
                           </tr>
                         ))}
@@ -563,10 +687,15 @@ export default function App() {
                     }} className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <input required placeholder="Nama Siswa" className="p-4 bg-gray-950 text-white border border-gray-800 rounded-xl text-sm outline-none" value={studentInput.name} onChange={e => setStudentInput({...studentInput, name: e.target.value})} />
                       <input required placeholder="NISN Resmi" className="p-4 bg-gray-950 text-white border border-gray-800 rounded-xl text-sm font-mono outline-none" value={studentInput.nisn} onChange={e => setStudentInput({...studentInput, nisn: e.target.value})} />
-                      <select className="p-4 bg-gray-950 text-white border border-gray-800 rounded-xl font-black text-xs outline-none" value={studentInput.grade} onChange={e => setStudentInput({...studentInput, grade: e.target.value})}>
-                        <option>X</option><option>XI</option><option>XII</option>
+                      <select className="p-4 bg-gray-950 text-white border border-gray-800 rounded-xl font-black text-xs outline-none" value={studentInput.grade} onChange={e => setStudentInput({...studentInput, grade: e.target.value, sub: '1'})}>
+                        <option value="X">Kelas X</option><option value="XI">Kelas XI</option><option value="XII">Kelas XII</option>
                       </select>
-                      <button className="bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-blue-500 transition-all">Daftarkan Master</button>
+                      
+                      <select className="p-4 bg-gray-950 text-white border border-gray-800 rounded-xl font-black text-xs outline-none" value={studentInput.sub} onChange={e => setStudentInput({...studentInput, sub: e.target.value})}>
+                        {[...Array(11)].map((_, i) => <option key={i+1} value={i+1}>{studentInput.grade}-{i+1}</option>)}
+                      </select>
+
+                      <button className="md:col-span-4 bg-blue-600 text-white rounded-xl font-black py-4 text-[10px] uppercase shadow-md hover:bg-blue-500 transition-all mt-2">Daftarkan Master</button>
                     </form>
                   </div>
 
@@ -614,15 +743,15 @@ export default function App() {
               </button>
               
               {user.level !== 'Admin' && (
-                  <button onClick={() => setCurrentView('upload')} className={`flex flex-col items-center gap-1 transition-all ${currentView==='upload'?'text-blue-500 scale-110':'text-gray-500'}`}>
-                      <UploadCloud fill={currentView==='upload'?'currentColor':'none'} size={24}/>
-                      <span className="text-[8px] font-black uppercase tracking-widest">Upload</span>
+                  <button onClick={() => setCurrentView('leaderboard')} className={`flex flex-col items-center gap-1 transition-all ${currentView==='leaderboard'?'text-blue-500 scale-110':'text-gray-500'}`}>
+                      <Trophy fill={currentView==='leaderboard'?'currentColor':'none'} size={24}/>
+                      <span className="text-[8px] font-black uppercase tracking-widest">Peringkat</span>
                   </button>
               )}
               {user.level !== 'Admin' && (
-                  <button onClick={() => setCurrentView('friends')} className={`flex flex-col items-center gap-1 transition-all ${currentView==='friends'?'text-blue-500 scale-110':'text-gray-500'}`}>
-                      <Users fill={currentView==='friends'?'currentColor':'none'} size={24}/>
-                      <span className="text-[8px] font-black uppercase tracking-widest">Teman</span>
+                  <button onClick={() => setCurrentView('upload')} className={`flex flex-col items-center gap-1 transition-all ${currentView==='upload'?'text-blue-500 scale-110':'text-gray-500'}`}>
+                      <UploadCloud fill={currentView==='upload'?'currentColor':'none'} size={24}/>
+                      <span className="text-[8px] font-black uppercase tracking-widest">Upload</span>
                   </button>
               )}
 
@@ -644,13 +773,139 @@ export default function App() {
           </nav>
       )}
 
-      {/* Pembaca PDF Modal */}
+      {/* MODAL DETAIL BUKU (Views & Comments) */}
+      {bookDetailModal && (
+          <div className="fixed inset-0 z-[150] bg-black/90 flex flex-col p-4 md:p-10 animate-fadeIn overflow-y-auto">
+             <div className="max-w-4xl mx-auto w-full bg-gray-900 rounded-[2.5rem] border border-gray-800 shadow-2xl relative my-auto">
+                <button onClick={() => setBookDetailModal(null)} className="absolute top-4 right-4 bg-gray-800 text-gray-400 p-3 rounded-full hover:bg-red-500 hover:text-white transition-colors z-10"><X size={20}/></button>
+                
+                <div className="flex flex-col md:flex-row gap-6 p-8">
+                    <div className="w-full md:w-1/3">
+                        <img src={bookDetailModal.cover} className="w-full rounded-2xl shadow-xl border border-gray-800"/>
+                        <button onClick={() => startReading(bookDetailModal)} className="w-full mt-4 bg-blue-600 text-white font-black py-4 rounded-xl uppercase tracking-widest hover:bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]">Mulai Membaca</button>
+                    </div>
+                    <div className="w-full md:w-2/3 flex flex-col">
+                        <h2 className="text-2xl md:text-3xl font-black text-white uppercase leading-tight mb-2">{bookDetailModal.title}</h2>
+                        
+                        <div className="flex items-center gap-4 mb-6">
+                            <span 
+                                onClick={() => { if(bookDetailModal.authorId) openPublicProfile(bookDetailModal.authorId); }}
+                                className={`text-sm font-bold uppercase tracking-widest ${bookDetailModal.authorId ? 'text-blue-400 cursor-pointer hover:underline' : 'text-gray-500'}`}
+                            >
+                                Oleh: {bookDetailModal.author}
+                            </span>
+                            <div className="h-4 w-px bg-gray-700"></div>
+                            <span className="text-xs text-gray-400 font-bold flex items-center gap-1"><Eye size={14}/> {bookDetailModal.views || 0} Pembaca</span>
+                        </div>
+
+                        <div className="bg-gray-950 rounded-2xl p-6 border border-gray-800 flex-grow flex flex-col">
+                            <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2"><MessageSquare size={14}/> Kolom Diskusi</h3>
+                            
+                            <div className="flex-grow space-y-4 mb-4 max-h-60 overflow-y-auto pr-2">
+                                {(bookDetailModal.comments || []).map(c => (
+                                    <div key={c.id} className="bg-gray-900 p-4 rounded-2xl border border-gray-800">
+                                        <div className="flex items-center gap-3 mb-2 cursor-pointer" onClick={() => openPublicProfile(c.userId)}>
+                                            <img src={c.userAvatar || 'https://via.placeholder.com/50'} className="w-6 h-6 rounded-full object-cover"/>
+                                            <span className="text-xs font-bold text-blue-400 hover:underline">{c.userName}</span>
+                                            <span className="text-[9px] text-gray-600 ml-auto">{timeAgo(c.timestamp)}</span>
+                                        </div>
+                                        <p className="text-sm text-gray-300">{c.text}</p>
+                                    </div>
+                                ))}
+                                {(!bookDetailModal.comments || bookDetailModal.comments.length === 0) && <p className="text-xs text-gray-600 text-center italic py-4">Jadilah yang pertama berkomentar!</p>}
+                            </div>
+
+                            {user.level !== 'Admin' && (
+                                <form onSubmit={submitComment} className="flex gap-2">
+                                    <input required value={commentText} onChange={e=>setCommentText(e.target.value)} placeholder="Tulis tanggapanmu..." className="flex-grow bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-blue-500"/>
+                                    <button type="submit" className="bg-blue-600 text-white px-6 font-black rounded-xl hover:bg-blue-500">Kirim</button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+             </div>
+          </div>
+      )}
+
+      {/* MODAL PROFIL PUBLIK (Orang Lain) */}
+      {publicProfileModal && (
+          <div className="fixed inset-0 z-[250] bg-black/90 flex flex-col items-center justify-center p-4 animate-fadeIn">
+              <div className="bg-gray-900 rounded-[3rem] w-full max-w-lg border-t-8 border-blue-500 shadow-2xl relative overflow-hidden">
+                  <button onClick={() => setPublicProfileModal(null)} className="absolute top-4 right-4 bg-gray-800 p-2 rounded-full text-gray-400 hover:text-white"><X size={16}/></button>
+                  <div className="p-8 text-center">
+                      <div className="w-24 h-24 mx-auto rounded-full bg-gray-800 border-4 border-gray-900 shadow-xl overflow-hidden mb-4">
+                          {publicProfileModal.avatar ? <img src={publicProfileModal.avatar} className="w-full h-full object-cover"/> : <User size={48} className="text-gray-600 mt-5 mx-auto"/>}
+                      </div>
+                      <h2 className="text-2xl font-black text-white uppercase">{publicProfileModal.name}</h2>
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mt-1 mb-4">Kelas {publicProfileModal.grade}-{publicProfileModal.subClass}</p>
+                      
+                      <div className="flex justify-center gap-4 mb-6">
+                          <div className="bg-gray-950 px-4 py-2 rounded-xl border border-gray-800">
+                              <p className="text-[10px] text-gray-500 uppercase font-black">Level</p>
+                              <p className="text-lg font-black text-blue-400">{calculateLevel(publicProfileModal.xp)}</p>
+                          </div>
+                          <div className="bg-gray-950 px-4 py-2 rounded-xl border border-gray-800">
+                              <p className="text-[10px] text-gray-500 uppercase font-black">Total XP</p>
+                              <p className="text-lg font-black text-yellow-500">{publicProfileModal.xp}</p>
+                          </div>
+                      </div>
+
+                      <div className="bg-gray-950 p-4 rounded-2xl text-left border border-gray-800 space-y-3">
+                          <div className="flex items-center gap-3 text-sm">
+                              <Clock size={16} className="text-blue-500"/>
+                              <span className="text-gray-400">Terakhir Online: <span className="text-white font-bold">{timeAgo(publicProfileModal.lastOnline)}</span></span>
+                          </div>
+                          <div className="flex items-center gap-3 text-sm">
+                              <BookOpen size={16} className="text-green-500"/>
+                              <span className="text-gray-400">Terakhir Dibaca: <span className="text-white font-bold">{publicProfileModal.lastReadTitle}</span></span>
+                          </div>
+                      </div>
+
+                      {publicProfileModal.works?.length > 0 && (
+                          <div className="mt-6 text-left">
+                              <h4 className="text-xs font-black uppercase text-gray-500 mb-3 border-b border-gray-800 pb-2">Karya yang diterbitkan</h4>
+                              <div className="flex gap-3 overflow-x-auto pb-2">
+                                  {publicProfileModal.works.map(w => (
+                                      <div key={w.id} className="w-24 flex-shrink-0 cursor-pointer" onClick={() => { setPublicProfileModal(null); setBookDetailModal(w); }}>
+                                          <img src={w.cover} className="w-24 h-32 object-cover rounded-xl shadow-md border border-gray-800 hover:border-blue-500"/>
+                                          <p className="text-[9px] font-bold text-white mt-1 line-clamp-1">{w.title}</p>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Pembaca PDF Modal (Murni untuk baca PDF) */}
       {readingBook && (
-        <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col p-2 md:p-6 animate-fadeIn pb-24 md:pb-6">
-          <div className="max-w-5xl mx-auto w-full h-full bg-gray-950 rounded-[2rem] border border-gray-800 overflow-hidden shadow-2xl flex flex-col relative">
+        <div className="fixed inset-0 z-[300] bg-black/95 flex flex-col p-2 md:p-6 animate-fadeIn pb-24 md:pb-6">
+          <div className="max-w-6xl mx-auto w-full h-full bg-gray-950 rounded-3xl md:rounded-[2rem] border border-gray-800 overflow-hidden shadow-2xl flex flex-col relative">
             <div className="p-4 bg-gray-900 border-b border-gray-800 text-white flex justify-between items-center">
-              <h3 className="font-black text-xs md:text-sm uppercase leading-none ml-2 text-gray-200"><BookIcon size={16} className="inline mr-2 text-blue-500"/> {readingBook.title}</h3>
-              <button onClick={() => { setReadingBook(null); fetch(`${API_URL}/stats/reading-stop`, {method:'POST'}).catch(()=>{}); }} className="bg-red-500/20 text-red-400 p-2 md:p-3 rounded-xl hover:bg-red-500 hover:text-white transition-all"><X size={16}/></button>
+              <h3 className="font-black text-xs md:text-sm uppercase leading-none ml-2 text-gray-200">
+                  <BookIcon size={16} className="inline mr-2 text-blue-500"/> 
+                  {isPreviewMode ? `(PRATINJAU ACC) ${readingBook.title}` : readingBook.title}
+              </h3>
+              
+              <div className="flex items-center gap-2">
+                  {isPreviewMode && (
+                      <button onClick={async () => {
+                          await fetch(`${API_URL}/books/${readingBook.id}`, { method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({...readingBook, status:'approved'}) });
+                          setBooks(books.map(bk => bk.id === readingBook.id ? {...bk, status:'approved'} : bk));
+                          showNotif("Karya disetujui dari Pratinjau!");
+                          setReadingBook(null); setIsPreviewMode(false);
+                      }} className="bg-green-600 text-white p-2 md:p-3 rounded-xl hover:bg-green-500 transition-all font-black text-[10px] uppercase flex items-center gap-1">
+                          <Check size={14}/> ACC Karya
+                      </button>
+                  )}
+                  <button onClick={() => { 
+                      setReadingBook(null); setIsPreviewMode(false);
+                      if(user.level !== 'Admin') fetch(`${API_URL}/stats/reading-stop`, {method:'POST'}).catch(()=>{}); 
+                  }} className="bg-red-500/20 text-red-400 p-2 md:p-3 rounded-xl hover:bg-red-500 hover:text-white transition-all"><X size={16}/></button>
+              </div>
             </div>
             <div className="flex-grow bg-gray-950 relative">
               {readingBook.fileBase64 ? (
@@ -668,7 +923,7 @@ export default function App() {
 
       {/* Notifikasi */}
       {notification && (
-        <div className={`fixed top-5 md:top-auto md:bottom-24 left-1/2 -translate-x-1/2 z-[300] px-6 py-3 md:px-8 md:py-4 rounded-full md:rounded-2xl shadow-2xl animate-slideUp flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white border border-blue-500'}`}>
+        <div className={`fixed top-5 md:top-auto md:bottom-24 left-1/2 -translate-x-1/2 z-[400] px-6 py-3 md:px-8 md:py-4 rounded-full md:rounded-2xl shadow-[0_0_20px_rgba(0,0,0,0.5)] animate-slideUp flex items-center gap-3 ${notification.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white border border-blue-500'}`}>
            {notification.type === 'error' ? <XCircle size={16}/> : <CheckCircle size={16}/>}
            <span className="font-black text-[10px] md:text-xs uppercase tracking-widest">{notification.msg}</span>
         </div>
@@ -681,6 +936,10 @@ export default function App() {
         .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
         .animate-slideUp { animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom, 1rem); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4B5563; }
       `}} />
     </div>
   );

@@ -541,7 +541,6 @@ export default function App() {
         <div className="bg-gray-900 p-10 rounded-[3rem] shadow-xl max-w-md border-t-8 border-red-500 w-full relative">
           <Activity size={60} className="mx-auto text-red-500 mb-6 animate-pulse" />
           <h1 className="text-2xl font-black uppercase italic tracking-widest text-white">Server Offline</h1>
-          <p className="text-sm text-gray-400 mt-4 font-medium">Jalankan <code className="text-red-400 bg-gray-800 px-2 py-1 rounded">node server.js</code> di komputermu.</p>
           <button onClick={() => setServerStatus('checking')} className="w-full mt-8 bg-blue-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest hover:bg-blue-500 transition-all">Muat Ulang</button>
         </div>
       </div>
@@ -743,12 +742,6 @@ export default function App() {
                     <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
                       <div className="bg-blue-500 h-3 rounded-full transition-all duration-1000" style={{ width: `${getXpProgress(user.xp)}%` }}></div>
                     </div>
-                  </div>
-                )}
-                {user.level === 'Pengunjung' && (
-                  <div className="bg-blue-600/10 border border-blue-500/30 p-6 rounded-[2rem] w-full md:w-72 text-center">
-                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 italic">Mode Terbatas</p>
-                    <p className="text-[9px] font-bold text-gray-500 uppercase leading-none">Login untuk akses penuh</p>
                   </div>
                 )}
               </div>
@@ -1603,9 +1596,7 @@ export default function App() {
                       <button type="submit" className="bg-blue-600 text-white px-4 font-black rounded-xl hover:bg-blue-500 flex-shrink-0"><Send size={15} /></button>
                     </form>
                   ) : (
-                    <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl text-center">
-                      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest italic">Login untuk dapat ikut berdiskusi</p>
-                    </div>
+                    <div></div>
                   )}
                 </div>
               </div>
